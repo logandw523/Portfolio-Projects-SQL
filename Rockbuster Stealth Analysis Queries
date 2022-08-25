@@ -1,0 +1,284 @@
+--1a) Count genres in film DB
+SELECT COUNT(DISTINCT c.name) AS genre_count
+FROM category c
+INNER JOIN film_category fc
+USING (category_id)
+INNER JOIN film f
+USING (film_id)
+
+--1b) Count films in film DB
+SELECT COUNT(title) AS film_count
+FROM film
+
+--1c) Avg rental duration in days
+SELECT ROUND(AVG(rental_duration),0) as avg_rental_duration_days
+FROM film
+
+--1d) Avg rental duration in days
+SELECT ROUND(AVG(rental_rate),2) as avg_rental_rate
+FROM film
+
+
+--1e) What movie contributed the most to revenue gain?
+WITH title_revenue (title, amount) AS
+(SELECT f.title, SUM(p.amount) AS revenue_gain
+FROM film f
+INNER JOIN inventory i
+USING(film_id)
+LEFT JOIN rental r
+USING(inventory_id)
+INNER JOIN payment p
+USING (rental_id)
+GROUP BY f.title)
+
+SELECT title, amount
+FROM title_revenue
+ORDER BY amount DESC
+LIMIT 1
+
+
+--1f) What movie contributed the least to revenue gain?
+SELECT f.title, SUM(p.amount) AS revenue_gain
+FROM film f
+INNER JOIN inventory i
+USING(film_id)
+LEFT JOIN rental r
+USING(inventory_id)
+INNER JOIN payment p
+USING (rental_id)
+GROUP BY f.title
+HAVING SUM(p.amount) < 5.95
+
+
+--1f) lifetime sales
+SELECT COUNT(amount) AS lifetime_transactions, SUM(amount) AS lifetime_sales
+FROM payment
+
+
+--1h) years for title
+SELECT EXTRACT(YEAR FROM payment_date) AS payment_years, (SELECT release_year FROM film LIMIT 1) AS release_years
+FROM payment
+LIMIT 1
+
+--1i) Customer demand by genre including rental quantity, sales and unique customers per genre
+WITH genre_sales AS(SELECT c.name AS genre_category, SUM(p.amount) AS rental_sales
+	FROM category c
+	INNER JOIN film_category fc
+	USING(category_id)
+	INNER JOIN film f
+	USING(film_id)
+	INNER JOIN inventory i
+	USING(film_id)
+	INNER JOIN rental r
+	USING(inventory_id)
+	LEFT JOIN payment p
+	USING(rental_id)
+	GROUP BY c.name),
+genre_rentals AS (SELECT c.name AS genre_category, COUNT(cust.customer_id) AS rentalquantities
+	FROM category c
+	INNER JOIN film_category fc
+	USING(category_id)
+	INNER JOIN film f
+	USING(film_id)
+	INNER JOIN inventory i
+	USING(film_id)
+	INNER JOIN rental r
+	USING(inventory_id)
+  	LEFT JOIN customer cust
+  	USING(customer_id)
+ 	GROUP BY c.name),
+genre_customers AS (SELECT c.name AS genre_category, COUNT(DISTINCT cust.customer_id) AS custdemand
+	FROM category c
+	INNER JOIN film_category fc
+	USING(category_id)
+	INNER JOIN film f
+	USING(film_id)
+	INNER JOIN inventory i
+	USING(film_id)
+	INNER JOIN rental r
+	USING(inventory_id)
+  	LEFT JOIN customer cust
+  	USING(customer_id)
+ 	GROUP BY c.name)
+
+SELECT *
+FROM genre_rentals
+JOIN genre_sales
+USING(genre_category)
+JOIN genre_customers
+USING(genre_category)
+ORDER BY rental_sales DESC, custdemand DESC
+
+--1j)Customer demand by rating including sales, rentals quantity
+SELECT f.rating, SUM(p.amount) AS rental_sales, COUNT(f.rating) AS rentals_byratings
+	FROM category c
+	INNER JOIN film_category fc
+	USING(category_id)
+	INNER JOIN film f
+	USING(film_id)
+	INNER JOIN inventory i
+	USING(film_id)
+	INNER JOIN rental r
+	USING(inventory_id)
+	LEFT JOIN payment p
+	USING(rental_id)
+	GROUP BY f.rating
+	ORDER BY rental_sales DESC
+
+
+
+--1k) Customer demand by country including customers by country and sales by country
+SELECT cntry.country, COUNT(cntry.country) AS cust_percountry, SUM(p.amount) AS sales_percountry
+	FROM country cntry
+	INNER JOIN city cty
+	USING(country_id)
+	INNER JOIN address a
+	USING(city_id)
+	INNER JOIN customer c
+	USING(address_id)
+	INNER JOIN rental r
+	USING(customer_id)
+	LEFT JOIN payment p
+	USING(rental_id)
+	GROUP BY cntry.country
+	ORDER BY sales_percountry DESC
+
+
+--Genre category sales by date
+	SELECT c.name AS genre_category, TO_CHAR(p.payment_date, 'mm-dd-yyyy'), SUM(p.amount) AS rental_sale, SUM(p.amount) OVER(PARTITION BY c.name) AS total_rental_sales
+	FROM category c
+	INNER JOIN film_category fc
+	USING(category_id)
+	INNER JOIN film f
+	USING(film_id)
+	INNER JOIN inventory i
+	USING(film_id)
+	INNER JOIN rental r
+	USING(inventory_id)
+	LEFT JOIN payment p
+	USING(rental_id)
+	GROUP BY c.name, p.payment_date, p.amount
+
+
+SELECT cty.city
+FROM country cntry
+	INNER JOIN city cty
+	USING(country_id)
+	INNER JOIN address a
+	USING(city_id)
+	INNER JOIN customer cu
+	USING(address_id)
+	INNER JOIN rental r
+	USING(customer_id)
+	LEFT JOIN payment p
+	USING(rental_id)
+WHERE cntry.country IN(SELECT cntry.country
+	FROM country cntry
+	INNER JOIN city cty
+	USING(country_id)
+	INNER JOIN address a
+	USING(city_id)
+	INNER JOIN customer cu
+	USING(address_id)
+	INNER JOIN rental r
+	USING(customer_id)
+	LEFT JOIN payment p
+	USING(rental_id)
+	GROUP BY cntry.country
+	ORDER BY COUNT(DISTINCT cu.customer_id) DESC
+	LIMIT 10)
+GROUP BY cty.city
+ORDER BY COUNT(cu.customer_id) DESC
+LIMIT 10)
+
+--1l Identify the top 5 customers by amount paid from the top 10 cities of the top 10 countries by customer numbers
+SELECT p.customer_id, cu.first_name || ' ' || cu.last_name AS FullName, cty.city, cntry.country, SUM(p.amount) AS salesbycustomer
+FROM country cntry
+	INNER JOIN city cty
+	USING(country_id)
+	INNER JOIN address a
+	USING(city_id)
+	INNER JOIN customer cu
+	USING(address_id)
+	INNER JOIN rental r
+	USING(customer_id)
+	LEFT JOIN payment p
+	USING(rental_id)
+WHERE cty.city IN (SELECT cty.city
+FROM country cntry
+	INNER JOIN city cty
+	USING(country_id)
+	INNER JOIN address a
+	USING(city_id)
+	INNER JOIN customer cu
+	USING(address_id)
+	INNER JOIN rental r
+	USING(customer_id)
+	LEFT JOIN payment p
+	USING(rental_id)
+WHERE cntry.country IN(SELECT cntry.country
+	FROM country cntry
+	INNER JOIN city cty
+	USING(country_id)
+	INNER JOIN address a
+	USING(city_id)
+	INNER JOIN customer cu
+	USING(address_id)
+	INNER JOIN rental r
+	USING(customer_id)
+	LEFT JOIN payment p
+	USING(rental_id)
+	GROUP BY cntry.country
+	ORDER BY COUNT(DISTINCT cu.customer_id) DESC
+	LIMIT 10)
+GROUP BY cty.city
+ORDER BY COUNT(cu.customer_id) DESC
+LIMIT 10)
+GROUP BY p.customer_id, cu.first_name, cu.last_name, cty.city, cntry.country
+HAVING SUM(p.amount) > 0
+ORDER BY SUM(p.amount) DESC
+LIMIT 5
+
+
+
+--1m Identify top 10 countries in terms of customer numbers
+SELECT cntry.country, COUNT(DISTINCT cu.customer_id) AS unique_customers
+	FROM country cntry
+	INNER JOIN city cty
+	USING(country_id)
+	INNER JOIN address a
+	USING(city_id)
+	INNER JOIN customer cu
+	USING(address_id)
+	INNER JOIN rental r
+	USING(customer_id)
+	LEFT JOIN payment p
+	USING(rental_id)
+	GROUP BY cntry.country
+	ORDER BY COUNT(DISTINCT cu.customer_id) DESC
+	LIMIT 10
+
+
+
+--1n Returning customers - rewards program by number of payments
+WITH rewards AS(SELECT cu.customer_id, cu.first_name || ' '  || cu.last_name AS fullname, COUNT(p.payment_id) AS paymentcount
+FROM country cntry
+	INNER JOIN city cty
+	USING(country_id)
+	INNER JOIN address a
+	USING(city_id)
+	INNER JOIN customer cu
+	USING(address_id)
+	INNER JOIN rental r
+	USING(customer_id)
+	LEFT JOIN payment p
+	USING(rental_id)
+	GROUP BY cu.customer_id, cu.first_name, cu.last_name
+	ORDER BY cu.customer_id)
+	
+SELECT 
+SUM(CASE WHEN (paymentcount BETWEEN 0 AND 20) THEN 1 ELSE 0 END) AS "Normal",
+SUM(CASE WHEN (paymentcount BETWEEN 21 AND 40) THEN 1 ELSE 0 END) AS "Plus",
+SUM(CASE WHEN (paymentcount BETWEEN 41 AND 60) THEN 1 ELSE 0 END) AS "Elite",
+(SELECT COUNT(*) FROM rewards) AS total_customers
+FROM rewards
