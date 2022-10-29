@@ -1,0 +1,172 @@
+-- 1) Standardize Date format and remove time
+SELECT saledate, DATE(saledate) AS correct_date
+FROM housing
+
+ALTER TABLE housing
+ALTER COLUMN saledate TYPE DATE
+
+-- Add year column from saledate
+ALTER TABLE housing
+ADD COLUMN saleyear SMALLINT
+
+-- Add year column from saledate
+UPDATE housing
+SET saleyear = EXTRACT(YEAR FROM saledate)
+RETURNING saledate, saleyear
+
+-- 2)Populate Property Address data
+SELECT *
+FROM housing
+WHERE propertyaddress IS NULL
+
+-- 2a) Self Join to match duplicate parcelids and missing addresses
+SELECT h1.parcelid, h1.propertyaddress, h2.parcelid, h2.propertyaddress
+FROM housing AS h1
+JOIN housing as h2
+	ON h1.parcelid = h2.parcelid
+	AND h1.uniqueid != h2.uniqueid
+
+-- 2b) Identify blank propertyaddress rows with matching address
+SELECT h1.parcelid, h1.propertyaddress, h2.parcelid, h2.propertyaddress
+FROM housing AS h1
+JOIN housing as h2
+	ON h1.parcelid = h2.parcelid
+	AND h1.uniqueid != h2.uniqueid
+WHERE h1.propertyaddress IS NULL
+
+-- 2c) Use COALESCE to identify field and correct address
+SELECT h1.parcelid, h1.propertyaddress, h2.parcelid, h2.propertyaddress, 
+	COALESCE(h1.propertyaddress, h2.propertyaddress) AS correctaddress
+FROM housing AS h1
+JOIN housing as h2
+	ON h1.parcelid = h2.parcelid
+	AND h1.uniqueid != h2.uniqueid
+WHERE h1.propertyaddress IS NULL
+
+
+-- 2d) Now use criteria to update column in housing table
+UPDATE housing h1
+SET propertyaddress = h2.propertyaddress
+FROM housing h2
+WHERE h1.parcelid = h2.parcelid
+AND h1.uniqueid <> h2.uniqueid
+AND h1.propertyaddress IS NULL
+
+
+-- 2e) Check to make sure all addresses now match
+SELECT h1.propertyaddress, h2.propertyaddress,
+	CASE WHEN h1.propertyaddress = h2.propertyaddress THEN 'match' ELSE 'no match' END AS chk_address
+FROM housing h1
+JOIN housing h2
+ON h1.parcelid = h2.parcelid
+AND h1.uniqueid != h2.uniqueid
+WHERE CASE WHEN h1.propertyaddress = h2.propertyaddress THEN 'match' ELSE 'no match' END = 'no match'
+
+-- 2f) Check to make sure all addresses NOT NULL
+SELECT propertyaddress
+FROM housing
+WHERE propertyaddress IS NULL
+
+
+-- 3a) Breaking out address into individual columns (Address, City)
+SELECT propertyaddress, SPLIT_PART(propertyaddress, ',',1) AS street_address,
+	SPLIT_PART(propertyaddress, ',', 2) AS city
+FROM housing
+
+-- 3b) Add column propertysplitaddress to table
+ALTER TABLE housing
+ADD COLUMN propertysplitaddress VARCHAR(255)
+
+-- 3c) Add column propertysplitcity to table
+ALTER TABLE housing
+ADD COLUMN propertysplitcity VARCHAR(255)
+
+
+-- 3d) Set values in propertysplitaddress column
+UPDATE housing
+SET propertysplitaddress = SPLIT_PART(propertyaddress, ',', 1)
+
+-- 3e) Set values in propertysplitcity column
+UPDATE housing
+SET propertysplitcity = SPLIT_PART(propertyaddress, ',', 2)
+
+-- 3f) Perform validation of addresses
+SELECT propertyaddress, propertysplitaddress, propertysplitcity
+FROM housing1
+
+-- 4a) Add column ownersplitaddress to table
+ALTER TABLE housing
+ADD COLUMN ownersplitaddress VARCHAR(255)
+
+-- 4b) Add column ownersplitcity to table
+ALTER TABLE housing
+ADD COLUMN ownersplitcity VARCHAR(255)
+
+-- 4c) Add column ownersplitstate to table
+ALTER TABLE housing
+ADD COLUMN ownersplitstate VARCHAR(255)
+
+-- 4d) Set split values to new columns
+
+UPDATE housing
+SET ownersplitaddress = SPLIT_PART(owneraddress, ',', 1)
+
+UPDATE housing
+SET ownersplitcity = SPLIT_PART(owneraddress, ',', 2)
+
+UPDATE housing
+SET ownersplitstate = SPLIT_PART(owneraddress, ',', 2)
+
+
+--4e) Perform validation of addresses
+SELECT owneraddress, ownersplitaddress, ownersplitcity, ownersplitstate
+FROM housing1
+WHERE owneraddress IS NOT NULL
+
+-- 5a) View distinct values in soldasvacant column
+SELECT DISTINCT soldasvacant
+FROM housing
+
+-- 5b) Change Y to Yes in soldasvacantfield
+UPDATE housing
+SET soldasvacant = 'Yes'
+WHERE soldasvacant = 'Y'
+
+-- 5c) Change N to No in soldasvacantfield
+UPDATE housing
+SET soldasvacant = 'No'
+WHERE soldasvacant = 'N'
+
+-- 5d) Perform validation of entries
+SELECT DISTINCT soldasvacant
+FROM housing
+
+-- 6a) Create CTE using window function to identify duplicates
+WITH rownumCTE AS(
+SELECT uniqueid,
+	ROW_NUMBER () OVER(PARTITION BY parcelid, propertyaddress, saleprice, saledate, legalreference
+					   ORDER BY uniqueid) AS row_num
+FROM housing
+ORDER BY parcelid
+)
+SElECT * FROM rownumCTE
+WHERE row_num > 1
+
+
+-- 6b) Delete duplicates
+DELETE FROM housing
+WHERE uniqueid IN 
+	(SELECT uniqueid 
+	 FROM(
+		SELECT uniqueid,
+		ROW_NUMBER () OVER(PARTITION BY parcelid, propertyaddress, saleprice, saledate, legalreference
+					   ORDER BY uniqueid) AS row_num
+		FROM housing) h1
+		WHERE row_num > 1)
+
+
+-- 7a) Drop unused columns
+ALTER TABLE housing
+DROP COLUMN owneraddress, 
+DROP COLUMN taxdistrict, 
+DROP COLUMN propertyaddress
