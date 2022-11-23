@@ -15,6 +15,9 @@ the main questions they’d l ike to answer:
 
 ● Do sales figures vary between geographic regions?
 
+Rockbuster Data Sets: A relational database made up of 17 tables contatining data on film rentals, customers, actors, payments and more.
+
+
+[Rockbuster.zip](https://github.com/logandw523/Portfolio-Projects-SQL/files/10076417/Rockbuster.zip)
 
 [Tableau Deliverable](https://public.tableau.com/views/RockbusterStealthAnalysis_16614669485310/Dashboard1?:language=en-US&:display_count=n&:origin=viz_share_link)
-
